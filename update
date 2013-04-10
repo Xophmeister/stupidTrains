@@ -1,0 +1,205 @@
+#!/usr/bin/env node
+
+// Database interface
+var dbi = require('./dbi');
+
+// Master Controller
+// Parses command line options and sets up batch
+(function(root) {
+  var options     = {},
+      commandLine = process.argv.slice(2);
+
+  // Option creator
+  var addOption = function(name, help, worker) {
+    if (!options.hasOwnProperty(name)) {
+      options[name] = {
+                        help:   help,  // Two element array: [params, text]
+                        worker: worker // Function :: array of strings -> array of jobs
+                      };
+    }
+  };
+
+  // Options help
+  var helpOption = function() {
+    var maxOptionLength = Math.max.apply(null, Object.keys(options).map(function(a) { return a.length; })),
+        termWrap = require('wordwrap')(maxOptionLength + 5, 80);
+
+    console.log('Usage: update [OPTION] RECORD');
+    for (var a in options) {
+      if (options.hasOwnProperty(a)) {
+        // Option name and parameters
+        console.log('\n  -' + a + 
+                    require('wordwrap')(2 + maxOptionLength - a.length, 80)(options[a].help[0]) + '\n');
+         
+        // Help text; indented
+        console.log(termWrap(options[a].help[1]) + '\n');
+      }
+    }
+  };
+
+  // Setup options
+  addOption(
+    'log',
+    ['DATE FROM TO SCHEDULE ARRIVAL [EXCUSE] [CANCELLED]', 'Append a journey log entry:\n\nDATE       Journey date (\'now\' for today)\nFROM       Origin station code\nTO         Destination station code\nSCHEDULE   Scheduled departure time\nARRIVAL    Actual arrival time\nEXCUSE     Guard\'s excuse for the service, if any\nCANCELLED  0 = No (Default); 1 = Yes\n\nNote that, as the most common use case, \'-log\' can be omitted.'],
+    function(record) {
+      return [{job: 'log', data: 'moo'}];
+    }
+  );
+
+  addOption(
+    'route',
+    ['ORIGIN DEPART (STATION ARRIVE)+', 'Create a new route from the ORIGIN station code, at the scheduled DEPART time, to each of the following STATION codes and advertised ARRIVE time tuples. There must be at least one destination tuple; arrival times must be greater than the departure time, but destinations needn\'t be in order. The route will be attached to the most recent origin; if one can\'t be found, you will be prompted to supply its validity dates and it will be added. Station codes must, however, exist.\n\ne.g., WAT 08:00 WIM 08:10 KNG 08:30\nThe 8am from Waterloo, arriving in Wimbledon at 8:10 and Kingston-upon-Thames at 8:30.'],
+    function(record) {
+
+      return [{job: 'route', data: 'moo'}];
+    }
+  );
+
+  addOption(
+    'station',
+    ['CODE DESCRIPTION', 'Add a station to the database. Official codes (dft.gov.uk/naptan) needn\'t be used, providing you\'re consistent and stick to the three character format.'],
+    function(record) {
+
+      return [{job: 'station', data: 'moo'}];
+    }
+  );
+
+  addOption(
+    'origin',
+    ['ORIGIN DEPART FROM [TO]', 'Adjust a route\'s ORIGIN station code and scheduled DEPART time\'s validity period: from midnight on FROM, to midnight on TO (which may be omitted if this information isn\'t available).'],
+    function(record) {
+
+      return [{job: 'origin', data: 'moo'}];
+    }
+  );
+
+  addOption(
+    'json',
+    ['FILENAME', 'Import data from a JSON file. See the project wiki on GitHub for the schema: https://github.com/Xophmeister/stupidTrains/wiki'],
+    function(record) {
+
+      return [{job: 'json stuff', data: 'moo'}];
+    }
+  );
+
+  this.justDoIt = function(callback) {
+    var task = {},
+        err, batch;
+
+    if (commandLine.length) {
+      if (commandLine[0].charAt(0) == '-') {
+        task.mode = commandLine[0].substr(1);
+        task.data = commandLine.slice(1);
+      } else {
+        task.mode = 'log';
+        task.data = commandLine;
+      }
+
+      // Create batch
+      if (options.hasOwnProperty(task.mode)) {
+        batch = options[task.mode].worker(task.data);
+      } else {
+        helpOption();
+        err = 'Invalid options specified';
+      }
+    } else {
+      helpOption();
+      err = 'Invalid options specified';
+    }
+
+    callback(err, batch);
+  };
+})(this);
+
+// Let's do this!
+justDoIt(function(err, batch) {
+  if (err) {
+    console.error('Error: ' + err);
+    process.exit(1);
+  }
+
+  batch.forEach(function(x) {
+    console.log(x);
+  });
+});
+
+
+/*
+// Open database
+var sqlite3 = require('sqlite3'),
+    db      = new sqlite3.Database('stupidTrains.sqlite', sqlite3.OPEN_READWRITE, function(err) {
+                if (err) {
+                  console.error('Cannot open database');
+                  process.exit(1);
+                }
+              });
+
+// Here's the science bit
+var interface = {
+  log:   function(record) {
+           // Record should be array of length between 5 and 7 (incl.)
+           //   Date                      YYYY-MM-DD
+           //   Origin Station Code       String
+           //   Destination Station Code  String
+           //   Scheduled Departure Time  HH:MM
+           //   Actual Arrival Time       HH:MM
+           //   Cancelled                 Boolean (0 or 1)
+           //   Excuse                    String
+
+           var data = {
+             $stationFrom: record[1],
+             $stationTo:   record[2],
+             $scheduleT:   record[0] + ' ' + record[3],
+             $arriveT:     record[0] + ' ' + record[4]
+           };
+
+           if (record.length > 5) data.$cancelled = record[5];
+           if (record.length > 6) data.$excuse = record[6];
+
+           console.log(JSON.stringify(data, null, 2));
+         },
+
+  train: function(record) {
+           console.log('Not yet implemented');
+         },
+
+  route: function(record) {
+           console.log('Not yet implemented');
+         }
+};
+
+// Process command line arguments
+//  -log    New journey log
+//  -train  New train TODO
+//  -route  New route TODO
+var args = process.argv.slice(2),
+    record, mode;
+
+if (args.length) {
+  if (args[0].charAt(0) === '-') {
+    mode   = args[0].substr(1);
+    record = args.slice[1];
+  } else {
+    mode   = 'log';
+    record = args;
+  }
+
+  if (interface.hasOwnProperty(mode)) {
+    interface[mode](record);
+  } else {
+    console.error('Invalid argument ' + mode);
+    process.exit(1);
+  }
+} else {
+  console.log('Usage: update.js VALS');
+  process.exit(1);
+}
+
+/*
+data.all('select * from log', function(err, row) {
+  if (err) throw new Error('Bah');
+  console.log(JSON.stringify(row));
+});
+*/
+
+// vim: ft=javascript
