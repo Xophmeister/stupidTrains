@@ -3,11 +3,13 @@
 I commute to work. I hate commuting.
 
 I am at the mercy of [South West Trains](http://southwesttrains.co.uk)
-and the service is so often delayed, I decided it was time to monitor
-their lateness.  This started off as a LibreOffice spreadsheet, but I'm
-a developer, dammit! We need an over-engineered solution.
+and [Network Rail](http://networkrail.co.uk), whose service is so often
+delayed, I decided it was time to monitor their lateness. This started
+off as a LibreOffice spreadsheet, but I'm a developer, dammit! We need
+an over-engineered solution.
 
-If you hate commuting, this is the repo for you.
+If your hate of commuting is offset by the desire to publicly humiliate
+those responsible with hard statistical data, this is the repo for you.
 
 ## Database
 
@@ -59,9 +61,8 @@ needn't be in order. The route will be attached to the most recent
 origin; if one can't be found, you will be prompted to supply its
 validity dates and it will be added. Station codes must, however, exist.
 
-e.g., `WAT 08:00 WIM 08:10 KNG 08:30`
-The 8am from Waterloo, arriving in Wimbledon at 8:10 and
-Kingston-upon-Thames at 8:30.
+e.g., `WAT 08:00 WIM 08:10 KNG 08:30` is the 8am from Waterloo, arriving
+in Wimbledon at 8:10 and Kingston-upon-Thames at 8:30.
 
 If the arrival time is after midnight, you must also specify a date
 component, the day after the Unix epoch. I'm too lazy to write logic
@@ -85,7 +86,6 @@ Adjust a route's `ORIGIN` station code and scheduled `DEPART` time's
 validity period: from midnight on `START`, to midnight on `FINISH`
 (which may be omitted if this information isn't available).
 
-
 ### `-json`
 
 Parameter: `FILENAME`
@@ -99,6 +99,27 @@ must be noted that South West Trains don't publish arrival times for
 minor stations, so we must use the published departure times. As one
 generally departs after arriving, this skews the statistics in South
 West Train's favour.
+
+My protocol for recording data is as follows:
+
+* All times are as recorded by the station clocks, which are presumed to
+  be correct and synchronised.
+* Seconds are rounded: >=30s is the next minute. If there is any
+  ambiguity (e.g., if I can't immediately see a clock and it's very
+  close), I will round down.
+* If I miss the train that I was intending to take, due to my lateness,
+  my intended train becomes the next one that is appropriate.
+* The scheduled departure time is that of my intended train.
+* If a train is cancelled before departure, the scheduled departure time
+  is that of my intended train (presuming I'm there in time to catch
+  it), rather than its replacement.
+* If a train is cancelled during the journey, the scheduled departure
+  time remains as that from the origin.
+* In the case of cancellations, I am to stick to the standard overground
+  route, rather than attempt a combination of tube and bus routes: Such
+  an alternative will not be recorded. An exception to this rule is in
+  the event of a rail replacement bus, which will be recorded as normal.
+* The arrival time is when the train's carriage door is openable.
 
 [TODO]
 
