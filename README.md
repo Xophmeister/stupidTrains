@@ -13,8 +13,8 @@ If you hate commuting, this is the repo for you.
 
 The database supplied with this repo contains the data that I have
 recorded. It will be updated every time I push from master, but not in
-perpetuity. If you want to collect your own statistics, you can use the
-`nuke` tool.
+perpetuity (contrary to popular belief, I have better things to do). If
+you want to collect your own statistics, you can use the `nuke` tool.
 
 [Write something general about the database]
 
@@ -73,9 +73,9 @@ e.g., `WAT 23:56 CLJ "1970-01-02 00:12"`
 
 Record: `CODE DESCRIPTION`
 
-Add a station to the database. [Official
-codes](http://dft.gov.uk/naptan) needn't be used, providing you're
-consistent and stick to the three character format.
+Add a station to the database. [Official codes](http://dft.gov.uk/naptan)
+needn't be used, providing you're consistent and stick to the three
+character format.
 
 ### `-origin`
 
