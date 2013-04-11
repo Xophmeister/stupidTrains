@@ -2,10 +2,10 @@
 
 I commute to work. I hate commuting.
 
-I am at the mercy of [South West Trains](southwesttrains.co.uk) and the
-service is so often delayed, I decided it was time to monitor their
-lateness. This started off as a LibreOffice spreadsheet, but I'm a
-developer, dammit! We need an over-engineered solution.
+I am at the mercy of [South West Trains](http://southwesttrains.co.uk)
+and the service is so often delayed, I decided it was time to monitor
+their lateness.  This started off as a LibreOffice spreadsheet, but I'm
+a developer, dammit! We need an over-engineered solution.
 
 If you hate commuting, this is the repo for you.
 
@@ -45,7 +45,7 @@ Append a journey log entry:
 If the `ARRIVE` time is after midnight, you must also specify a date
 component (YYYY-MM-DD HH:MM).
 
-Note that, as the most common use case, `-log` can be omitted.
+Note that, as the most common use-case, `-log` can be omitted.
 
 ### `-route`
 
@@ -73,9 +73,9 @@ e.g., `WAT 23:56 CLJ "1970-01-02 00:12"`
 
 Record: `CODE DESCRIPTION`
 
-Add a station to the database. [Official codes](dft.gov.uk/naptan)
-needn't be used, providing you're consistent and stick to the three
-character format.
+Add a station to the database. [Official
+codes](http://dft.gov.uk/naptan) needn't be used, providing you're
+consistent and stick to the three character format.
 
 ### `-origin`
 

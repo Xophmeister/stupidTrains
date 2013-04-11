@@ -12,10 +12,8 @@ var dbi = require('./dbi');
   // Option creator
   var addOption = function(name, help, setup) {
     if (!options.hasOwnProperty(name)) {
-      options[name] = {
-                        help:  help, // Two element array: [params, text]
-                        setup: setup // Array of strings -> callback with err & job / array of jobs
-                      };
+      options[name] = { help:  help,    // Two element array: [params, text]
+                        setup: setup }; // Array of strings -> callback with err & job / array of jobs
     }
   };
 
@@ -117,7 +115,7 @@ var dbi = require('./dbi');
       'CANCELLED  0 = No (Default); 1 = Yes\n\n' +
       'If the ARRIVE time is after midnight, you must also specify a ' +
       'date component (YYYY-MM-DD HH:MM).\n\n' +
-      'Note that, as the most common use case, \'-log\' can be omitted.'
+      'Note that, as the most common use-case, \'-log\' can be omitted.'
     ],
 
     function(record, callback) {
@@ -256,7 +254,7 @@ var dbi = require('./dbi');
 
   //////////////////////////////////////////////////////////////////////
 
-  this.justDoIt = function(callback) {
+  root.justDoIt = function(callback) {
     var task = {},
         err, batch;
 
@@ -290,7 +288,7 @@ var dbi = require('./dbi');
 
     callback(err, batch);
   };
-})(this);
+})(global);
 
 // Let's do this!
 justDoIt(function(err, batch) {
