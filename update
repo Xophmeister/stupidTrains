@@ -10,77 +10,251 @@ var dbi = require('./dbi');
       commandLine = process.argv.slice(2);
 
   // Option creator
-  var addOption = function(name, help, worker) {
+  var addOption = function(name, help, setup) {
     if (!options.hasOwnProperty(name)) {
       options[name] = {
-                        help:   help,  // Two element array: [params, text]
-                        worker: worker // Function :: array of strings -> array of jobs
+                        help:  help, // Two element array: [params, text]
+                        setup: setup // Array of strings -> callback with err & job / array of jobs
                       };
     }
   };
 
   // Options help
-  var helpOption = function() {
-    var maxOptionLength = Math.max.apply(null, Object.keys(options).map(function(a) { return a.length; })),
-        termWrap = require('wordwrap')(maxOptionLength + 5, 80);
+  var helpOption = function(which) {
+    var toExplain = (which && options.hasOwnProperty(which)) ? [which] : Object.keys(options),
+        maxLength = toExplain.reduce(function(longest, current) {
+                      return Math.max(longest, current.length);
+                    }, 0),
+        termWrap  = require('wordwrap')(maxLength + 5, 80);
 
     console.log('Usage: update [OPTION] RECORD');
-    for (var a in options) {
-      if (options.hasOwnProperty(a)) {
-        // Option name and parameters
-        console.log('\n  -' + a + 
-                    require('wordwrap')(2 + maxOptionLength - a.length, 80)(options[a].help[0]) + '\n');
-         
-        // Help text; indented
-        console.log(termWrap(options[a].help[1]) + '\n');
-      }
-    }
+
+    toExplain.forEach(function(opt) {
+      // Option name and its parameters
+      console.log('\n  -' + opt +
+                  require('wordwrap')(2 + maxLength - opt.length, 80)(options[opt].help[0]) + '\n');
+
+      // Help text; indented and wrapped
+      console.log(termWrap(options[opt].help[1]) + '\n');
+    });
   };
 
-  // Setup options
+  // Record validator
+  var validateRecord = function(data, spec, callback) {
+    var err;
+
+    /* The parameter specification is a simplified regular expression
+       with a limited alphabet, which represent expected types:
+     
+         Date     Time        Station  String       Boolean
+         -------- ----------- -------- ------------ ----------
+         DATE     SCHEDULE    FROM     EXCUSE       CANCELLED 
+         START    ARRIVE (*)  TO       DESCRIPTION
+         FINISH   DEPART      ORIGIN
+                              STATION
+                              CODE                   (*) Can be datetime
+
+       I should probably write a proper FSM to parse this, but life is
+       short and I can just get away with converting things into a
+       humongous RegExp...                                            */
+
+    var types = {
+      date:     { re:     '\\d{4}-\\d{2}-\\d{2}',     // YYYY-MM-DD
+                  tokens: ['DATE', 'START', 'FINISH'] },
+      time:     { re:     '\\d{2}:\\d{2}(:\\d{2})?',  // HH:MM(:SS)?
+                  tokens: ['SCHEDULE', 'DEPART'] },
+      datetime: { tokens: ['ARRIVE'] },
+      station:  { re:     '[a-zA-Z]{3}',
+                  tokens: ['FROM', 'TO', 'ORIGIN', 'STATION', 'CODE'] },
+      string:   { re:     '.*',                       // TODO This is wrong!
+                  tokens: ['EXCUSE', 'DESCRIPTION'] },
+      bool:     { re:     '0|1',
+                  tokens: ['CANCELLED'] }
+    };
+    types.datetime.re = '(' + types.date.re + ' )?' + types.time.re;
+
+    // We need to tweak the spec slightly to correct for whitespace
+    // before optional components or capture groups
+    var reValidate = '^' + spec.replace(/ (\w+)\?/g, '( $1)?').replace(/ \(/g, '( ') + '$';
+
+    for (var t in types) {
+      var re = types[t].re;
+      types[t].tokens.forEach(function(token) {
+        var reToken = new RegExp('\\b' + token + '\\b', 'g');
+        reValidate = reValidate.replace(reToken, '(' + re + ')');
+      });
+    };
+
+    var validator = new RegExp(reValidate);
+    if (!validator.test(data.join(' '))) {
+      err = 'Invalid record format';
+    }
+
+    // Note that we have only validated the text format, there are no
+    // validations on things like correct date, etc. This is left unto
+    // SQLite and the constraints put on the database.
+    callback(err, data);
+  };
+
+  // TODO Refactor the option setup functions into something more
+  //      general; they are all very similar.
+       
+  //////////////////////////////////////////////////////////////////////
+
+  // Setup options and record handlers
   addOption(
     'log',
-    ['DATE FROM TO SCHEDULE ARRIVAL [EXCUSE] [CANCELLED]', 'Append a journey log entry:\n\nDATE       Journey date (\'now\' for today)\nFROM       Origin station code\nTO         Destination station code\nSCHEDULE   Scheduled departure time\nARRIVAL    Actual arrival time\nEXCUSE     Guard\'s excuse for the service, if any\nCANCELLED  0 = No (Default); 1 = Yes\n\nNote that, as the most common use case, \'-log\' can be omitted.'],
-    function(record) {
-      return [{job: 'log', data: 'moo'}];
+    [
+      'DATE FROM SCHEDULE TO ARRIVE (EXCUSE CANCELLED?)?',
+
+      'Append a journey log entry:\n\n' +
+      'DATE       Journey date (YYYY-MM-DD)\n' +
+      'FROM       Origin station code\n' +
+      'SCHEDULE   Scheduled departure time (HH:MM)\n' +
+      'TO         Destination station code\n' +
+      'ARRIVE     Actual arrival time (HH:MM)\n' +
+      'EXCUSE     Guard\'s excuse for the service, if any\n' +
+      'CANCELLED  0 = No (Default); 1 = Yes\n\n' +
+      'If the ARRIVE time is after midnight, you must also specify a ' +
+      'date component (YYYY-MM-DD HH:MM).\n\n' +
+      'Note that, as the most common use case, \'-log\' can be omitted.'
+    ],
+
+    function(record, callback) {
+      validateRecord(record, this.help[0], function(err, data) {
+        var args;
+
+        if (!err) {
+          args = {
+            $from:      data[1].toUpperCase(),
+            $depart:    data[0] + ' ' + data[2],
+            $to:        data[3].toUpperCase(),
+            $arrive:    data[4].length >= 16 ? data[4] : data[0] + ' ' + data[4],
+            $excuse:    data.length > 5      ? data[5] : null,
+            $cancelled: data.length == 7     ? data[6] : 0
+          };
+        }
+
+        callback(err, {job: dbi.log, data: args});
+      });
     }
   );
 
   addOption(
     'route',
-    ['ORIGIN DEPART (STATION ARRIVE)+', 'Create a new route from the ORIGIN station code, at the scheduled DEPART time, to each of the following STATION codes and advertised ARRIVE time tuples. There must be at least one destination tuple; arrival times must be greater than the departure time, but destinations needn\'t be in order. The route will be attached to the most recent origin; if one can\'t be found, you will be prompted to supply its validity dates and it will be added. Station codes must, however, exist.\n\ne.g., WAT 08:00 WIM 08:10 KNG 08:30\nThe 8am from Waterloo, arriving in Wimbledon at 8:10 and Kingston-upon-Thames at 8:30.'],
-    function(record) {
+    [
+      'ORIGIN DEPART (STATION ARRIVE)+',
 
-      return [{job: 'route', data: 'moo'}];
+      'Create a new route from the ORIGIN station code, at the ' +
+      'scheduled DEPART time, to each of the following STATION codes ' +
+      'and advertised ARRIVE time tuples. There must be at least one ' +
+      'destination tuple; arrival times must be greater than the ' +
+      'departure time, but destinations needn\'t be in order. The ' +
+      'route will be attached to the most recent origin; if one ' +
+      'can\'t be found, you will be prompted to supply its validity ' +
+      'dates and it will be added. Station codes must, however, exist.\n\n' +
+      'e.g., WAT 08:00 WIM 08:10 KNG 08:30\n' +
+      'The 8am from Waterloo, arriving in Wimbledon at 8:10 and ' +
+      'Kingston-upon-Thames at 8:30.\n\n'+
+      'If the arrival time is after midnight, you must also specify ' +
+      'a date component, the day after the Unix epoch:\n\n' +
+      'e.g., WAT 23:56 CLJ "1970-01-02 00:12"'
+    ],
+
+    function(record, callback) {
+      validateRecord(record, this.help[0], function(err, data) {
+        var args;
+
+        if (!err) {
+          args = {
+            $origin:   data[0].toUpperCase(),
+            $depart:   '1970-01-01 ' + data[1],
+            waypoints: []
+          };
+
+          for (var i = 2; i < data.length; i += 2) {
+            args.waypoints.push({
+              $station: data[i].toUpperCase(),
+              $arrive:  data[i + 1].length >= 16 ? data[i + 1] : '1970-01-01 ' + data[i + 1]
+            });
+          }
+        }
+
+        callback(err, {job: dbi.route, data: args});
+      });
     }
   );
 
   addOption(
     'station',
-    ['CODE DESCRIPTION', 'Add a station to the database. Official codes (dft.gov.uk/naptan) needn\'t be used, providing you\'re consistent and stick to the three character format.'],
-    function(record) {
+    [
+      'CODE DESCRIPTION',
 
-      return [{job: 'station', data: 'moo'}];
+      'Add a station to the database. Official codes (dft.gov.uk/naptan) ' +
+      'needn\'t be used, providing you\'re consistent and stick to the ' +
+      'three character format.'
+    ],
+
+    function(record, callback) {
+      validateRecord(record, this.help[0], function(err, data) {
+        var args;
+
+        if (!err) {
+          args = {
+            $code: data[0].toUpperCase(),
+            $name: data[1]
+          };
+        }
+
+        callback(err, {job: dbi.station, data: args});
+      });
     }
   );
 
   addOption(
     'origin',
-    ['ORIGIN DEPART FROM [TO]', 'Adjust a route\'s ORIGIN station code and scheduled DEPART time\'s validity period: from midnight on FROM, to midnight on TO (which may be omitted if this information isn\'t available).'],
-    function(record) {
+    [
+      'ORIGIN DEPART START FINISH?',
+      
+      'Adjust a route\'s ORIGIN station code and scheduled DEPART ' +
+      'time\'s validity period: from midnight on START, to midnight on ' +
+      'FINISH (which may be omitted if this information isn\'t available).'
+    ],
+    
+    function(record, callback) {
+      validateRecord(record, this.help[0], function(err, data) {
+        var args;
 
-      return [{job: 'origin', data: 'moo'}];
+        if (!err) {
+          args = {
+            $origin:    data[0].toUpperCase(),
+            $depart:    data[1],
+            $validFrom: data[2],
+            $validTo:   data.length == 4 ? data[3] : null
+          };
+        }
+
+        callback(err, {job: dbi.origin, data: args});
+      });
     }
   );
 
   addOption(
     'json',
-    ['FILENAME', 'Import data from a JSON file. See the project wiki on GitHub for the schema: https://github.com/Xophmeister/stupidTrains/wiki'],
-    function(record) {
-
-      return [{job: 'json stuff', data: 'moo'}];
+    [
+      'FILENAME',
+      
+      'Import data from a JSON file. See the project wiki on GitHub ' +
+      'for the schema: https://github.com/Xophmeister/stupidTrains/wiki'
+    ],
+    
+    function(record, callback) {
+      // TODO
+      callback('Not yet implemented', null);
     }
   );
+
+  //////////////////////////////////////////////////////////////////////
 
   this.justDoIt = function(callback) {
     var task = {},
@@ -97,14 +271,21 @@ var dbi = require('./dbi');
 
       // Create batch
       if (options.hasOwnProperty(task.mode)) {
-        batch = options[task.mode].worker(task.data);
+        options[task.mode].setup(task.data, function(e, jobs) {
+          if (e) {
+            helpOption(task.mode);
+            err = e;
+          } else {
+            batch = Array.isArray(jobs) ? jobs : [jobs];
+          }
+        });
       } else {
         helpOption();
         err = 'Invalid options specified';
       }
     } else {
       helpOption();
-      err = 'Invalid options specified';
+      err = 'No options specified';
     }
 
     callback(err, batch);
@@ -118,88 +299,9 @@ justDoIt(function(err, batch) {
     process.exit(1);
   }
 
-  batch.forEach(function(x) {
-    console.log(x);
+  batch.forEach(function(task) {
+    task.job(task.data, console.log);
   });
 });
-
-
-/*
-// Open database
-var sqlite3 = require('sqlite3'),
-    db      = new sqlite3.Database('stupidTrains.sqlite', sqlite3.OPEN_READWRITE, function(err) {
-                if (err) {
-                  console.error('Cannot open database');
-                  process.exit(1);
-                }
-              });
-
-// Here's the science bit
-var interface = {
-  log:   function(record) {
-           // Record should be array of length between 5 and 7 (incl.)
-           //   Date                      YYYY-MM-DD
-           //   Origin Station Code       String
-           //   Destination Station Code  String
-           //   Scheduled Departure Time  HH:MM
-           //   Actual Arrival Time       HH:MM
-           //   Cancelled                 Boolean (0 or 1)
-           //   Excuse                    String
-
-           var data = {
-             $stationFrom: record[1],
-             $stationTo:   record[2],
-             $scheduleT:   record[0] + ' ' + record[3],
-             $arriveT:     record[0] + ' ' + record[4]
-           };
-
-           if (record.length > 5) data.$cancelled = record[5];
-           if (record.length > 6) data.$excuse = record[6];
-
-           console.log(JSON.stringify(data, null, 2));
-         },
-
-  train: function(record) {
-           console.log('Not yet implemented');
-         },
-
-  route: function(record) {
-           console.log('Not yet implemented');
-         }
-};
-
-// Process command line arguments
-//  -log    New journey log
-//  -train  New train TODO
-//  -route  New route TODO
-var args = process.argv.slice(2),
-    record, mode;
-
-if (args.length) {
-  if (args[0].charAt(0) === '-') {
-    mode   = args[0].substr(1);
-    record = args.slice[1];
-  } else {
-    mode   = 'log';
-    record = args;
-  }
-
-  if (interface.hasOwnProperty(mode)) {
-    interface[mode](record);
-  } else {
-    console.error('Invalid argument ' + mode);
-    process.exit(1);
-  }
-} else {
-  console.log('Usage: update.js VALS');
-  process.exit(1);
-}
-
-/*
-data.all('select * from log', function(err, row) {
-  if (err) throw new Error('Bah');
-  console.log(JSON.stringify(row));
-});
-*/
 
 // vim: ft=javascript

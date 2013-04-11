@@ -1,0 +1,18 @@
+{
+  "name": "stupid-trains",
+  "version": "0.0.1",
+  "description": "Commuter Train Monitoring",
+  "main": "update",
+  "dependencies": {
+    "sqlite3": "~2.1.7",
+    "wordwrap": "~0.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/Xophmeister/stupidTrains.git"
+  },
+  "author": "Christopher Harrison",
+  "license": "MIT",
+  "readmeFilename": "README.md",
+  "gitHead": "95e643356e5216b41974c2793bdc963048ac9370"
+}
