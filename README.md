@@ -95,10 +95,10 @@ Import data from a JSON file. See the project wiki for the schema.
 ## Statistical Analyses
 
 The database stores the scheduled arrival times of trains on a route. It
-must be noted that South West Trains don't publish arrival times for
+must be noted that South West Trains doesn't publish arrival times for
 minor stations, so we must use the published departure times. As one
 generally departs after arriving, this skews the statistics in South
-West Train's favour.
+West Trains' favour.
 
 My protocol for recording data is as follows:
 
