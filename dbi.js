@@ -41,5 +41,10 @@
 
   interface.route  = todo;
   interface.origin = todo;
-  interface.nuke   = todo;
+  
+  interface.nuke   = function(callback) {
+                       // TODO
+                       // Delete table data
+                       callback('Not yet implemented', null);
+                     };
 })();

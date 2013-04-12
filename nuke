@@ -1,0 +1,70 @@
+#!/usr/bin/env node
+
+var dbi   = require('./dbi'), // DB interface
+    qa    = require('./io'),  // Q&A prompt
+    fs    = require('fs'),
+    async = require('async');
+
+var question = function(q, options, abort) {
+  return function(callback) {
+    qa(q, options, function(a) {
+      var err = abort ? (a == abort) : null;
+      callback(err, a);
+    });
+  };
+};
+
+async.series([
+
+  question('Are you sure you want to nuke the database?', ['n', 'y'],   'n'),
+
+  question('Really!?',                                    ['n', 'yes'], 'n'),
+
+  question('Can I at least make a backup for you?',       ['y', 'no'])
+
+], function(abort, results) {
+  
+  if (abort) {
+    console.log('Phew! That was close.');
+
+  } else {
+    async.series([
+
+      // Backup routine
+      // ...this could probably be done better :P
+      function(callback) {
+        if (results[2] == 'y') {
+          // We know the file exists, because SQLite would have
+          // complained before now. So we copy the database file to
+          // 'stupidTrains.[timestamp].backup'.
+
+          var timestamp  = new Date().getTime(),
+              backupName = 'stupidTrains.' + timestamp + '.backup',
+              
+              source     = fs.createReadStream('stupidTrains.sqlite'),
+              backup     = fs.createWriteStream(backupName);
+
+          source.on('error', function() {
+            callback('Cannot perform backup - nuke aborted!', null); 
+          }).on('end', function() {
+            callback(null, 'Database backed up as ' + backupName);
+          });
+
+          source.pipe(backup);
+
+        } else {
+          callback(null, 'No backup requested.');
+        }
+      },
+
+      dbi.nuke
+
+    ], function(err, result) {
+      // Report outcome
+      console.log(result.filter(function(a) { return a != null; }).join('\n'));
+      if (err) console.error('Error: ' + err);
+    });
+  }
+});
+
+// vim: ft=javascript
