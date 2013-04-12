@@ -1,6 +1,6 @@
 # Stupid Trains
 
-I commute to work. I hate commuting.
+I hate commuting.
 
 I am at the mercy of [South West Trains](http://southwesttrains.co.uk)
 and [Network Rail](http://networkrail.co.uk), whose service is so often
@@ -8,19 +8,21 @@ delayed, I decided it was time to monitor their lateness. This started
 off as a LibreOffice spreadsheet, but I'm a developer, dammit! We need
 an over-engineered solution.
 
-If your hate of commuting is offset by the desire to publicly humiliate
-those responsible with hard statistical data, this is the repo for you.
+If your hate of commuting is similarly offset by the desire to publicly
+humiliate those responsible with hard statistical data, this is the repo
+for you.
 
 ## Database
+
+The database is SQLite-based and is used to model train routes and
+journeys taken upon them. It contains a number of views that are used by
+the statistical analyses routines (in R). A full overview of the
+database schema can be found in the project wiki.
 
 The database supplied with this repo contains the data that I have
 recorded. It will be updated every time I push from master, but not in
 perpetuity (contrary to popular belief, I have better things to do). If
 you want to collect your own statistics, you can use the `nuke` tool.
-
-[Write something general about the database]
-
-A full overview of the database schema can be found in the project wiki.
 
 ## Update Tool
 
@@ -88,9 +90,9 @@ validity period: from midnight on `START`, to midnight on `FINISH`
 
 ### `-json`
 
-Parameter: `FILENAME`
+Parameter: `FILENAME+`
 
-Import data from a JSON file. See the project wiki for the schema.
+Import data from a JSON file(s). See the project wiki for the schema.
 
 ## Statistical Analyses
 

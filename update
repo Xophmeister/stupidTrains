@@ -37,12 +37,16 @@ var dbi = require('./dbi');
     });
   };
 
-  // Record validator
+  //////////////////////////////////////////////////////////////////////
+
+  var cache = {}; // This is for the sake of the JSON import
+
+  // Record validation
   var validateRecord = function(data, spec, callback) {
-    var err;
+    var validator, err;
 
     /* The parameter specification is a simplified regular expression
-       with a limited alphabet, which represent expected types:
+       with a limited alphabet, which represents expected types:
      
          Date     Time        Station  String       Boolean
          -------- ----------- -------- ------------ ----------
@@ -56,34 +60,40 @@ var dbi = require('./dbi');
        short and I can just get away with converting things into a
        humongous RegExp...                                            */
 
-    var types = {
-      date:     { re:     '\\d{4}-\\d{2}-\\d{2}',     // YYYY-MM-DD
-                  tokens: ['DATE', 'START', 'FINISH'] },
-      time:     { re:     '\\d{2}:\\d{2}(:\\d{2})?',  // HH:MM(:SS)?
-                  tokens: ['SCHEDULE', 'DEPART'] },
-      datetime: { tokens: ['ARRIVE'] },
-      station:  { re:     '[a-zA-Z]{3}',
-                  tokens: ['FROM', 'TO', 'ORIGIN', 'STATION', 'CODE'] },
-      string:   { re:     '.*',                       // TODO This is wrong!
-                  tokens: ['EXCUSE', 'DESCRIPTION'] },
-      bool:     { re:     '0|1',
-                  tokens: ['CANCELLED'] }
-    };
-    types.datetime.re = '(' + types.date.re + ' )?' + types.time.re;
+    if (cache.hasOwnProperty(spec)) {
+      validator = cache[spec];
 
-    // We need to tweak the spec slightly to correct for whitespace
-    // before optional components or capture groups
-    var reValidate = '^' + spec.replace(/ (\w+)\?/g, '( $1)?').replace(/ \(/g, '( ') + '$';
+    } else {
+      var types = {
+        date:     { re:     '\\d{4}-\\d{2}-\\d{2}',     // YYYY-MM-DD
+                    tokens: ['DATE', 'START', 'FINISH'] },
+        time:     { re:     '\\d{2}:\\d{2}(:\\d{2})?',  // HH:MM(:SS)?
+                    tokens: ['SCHEDULE', 'DEPART'] },
+        datetime: { tokens: ['ARRIVE'] },
+        station:  { re:     '[a-zA-Z]{3}',
+                    tokens: ['FROM', 'TO', 'ORIGIN', 'STATION', 'CODE'] },
+        string:   { re:     '.*',                       // TODO This is wrong!
+                    tokens: ['EXCUSE', 'DESCRIPTION'] },
+        bool:     { re:     '0|1',
+                    tokens: ['CANCELLED'] }
+      };
+      types.datetime.re = '(' + types.date.re + ' )?' + types.time.re;
 
-    for (var t in types) {
-      var re = types[t].re;
-      types[t].tokens.forEach(function(token) {
-        var reToken = new RegExp('\\b' + token + '\\b', 'g');
-        reValidate = reValidate.replace(reToken, '(' + re + ')');
-      });
-    };
+      // We need to tweak the spec slightly to correct for whitespace
+      // before optional components or capture groups
+      var reValidate = '^' + spec.replace(/ (\w+)\?/g, '( $1)?').replace(/ \(/g, '( ') + '$';
 
-    var validator = new RegExp(reValidate);
+      for (var t in types) {
+        var re = types[t].re;
+        types[t].tokens.forEach(function(token) {
+          var reToken = new RegExp('\\b' + token + '\\b', 'g');
+          reValidate = reValidate.replace(reToken, '(' + re + ')');
+        });
+      };
+
+      validator = cache[spec] = new RegExp(reValidate);
+    }
+
     if (!validator.test(data.join(' '))) {
       err = 'Invalid record format';
     }
@@ -94,11 +104,20 @@ var dbi = require('./dbi');
     callback(err, data);
   };
 
-  // TODO Refactor the option setup functions into something more
-  //      general; they are all very similar.
-       
-  //////////////////////////////////////////////////////////////////////
+  // Generic setup: Validates single record and converts to database
+  // interface job and respective parameters
+  var genericSetup = function(job, handler) {
+    return function(record, callback) {
+      validateRecord(record, this.help[0], function(err, data) {
+        var args;
+        if (!err) { args = handler(data); }
+        callback(err, { job: job, data: args });
+      });
+    };
+  };
 
+  //////////////////////////////////////////////////////////////////////
+  
   // Setup options and record handlers
   addOption(
     'log',
@@ -118,24 +137,16 @@ var dbi = require('./dbi');
       'Note that, as the most common use-case, \'-log\' can be omitted.'
     ],
 
-    function(record, callback) {
-      validateRecord(record, this.help[0], function(err, data) {
-        var args;
-
-        if (!err) {
-          args = {
-            $from:      data[1].toUpperCase(),
-            $depart:    data[0] + ' ' + data[2],
-            $to:        data[3].toUpperCase(),
-            $arrive:    data[4].length >= 16 ? data[4] : data[0] + ' ' + data[4],
-            $excuse:    data.length > 5      ? data[5] : null,
-            $cancelled: data.length == 7     ? data[6] : 0
-          };
-        }
-
-        callback(err, {job: dbi.log, data: args});
-      });
-    }
+    genericSetup(dbi.log, function(data) {
+      return {
+        $from:      data[1].toUpperCase(),
+        $depart:    data[0] + ' ' + data[2],
+        $to:        data[3].toUpperCase(),
+        $arrive:    data[4].length >= 16 ? data[4] : data[0] + ' ' + data[4],
+        $excuse:    data.length > 5      ? data[5] : null,
+        $cancelled: data.length == 7     ? data[6] : 0
+      };
+    })
   );
 
   addOption(
@@ -159,28 +170,22 @@ var dbi = require('./dbi');
       'e.g., WAT 23:56 CLJ "1970-01-02 00:12"'
     ],
 
-    function(record, callback) {
-      validateRecord(record, this.help[0], function(err, data) {
-        var args;
+    genericSetup(dbi.route, function(data) {
+      var args = {
+        $origin:   data[0].toUpperCase(),
+        $depart:   '1970-01-01 ' + data[1],
+        waypoints: []
+      };
+      
+      for (var i = 2; i < data.length; i += 2) {
+        args.waypoints.push({
+          $station: data[i].toUpperCase(),
+          $arrive:  data[i + 1].length >= 16 ? data[i + 1] : '1970-01-01 ' + data[i + 1]
+        });
+      }
 
-        if (!err) {
-          args = {
-            $origin:   data[0].toUpperCase(),
-            $depart:   '1970-01-01 ' + data[1],
-            waypoints: []
-          };
-
-          for (var i = 2; i < data.length; i += 2) {
-            args.waypoints.push({
-              $station: data[i].toUpperCase(),
-              $arrive:  data[i + 1].length >= 16 ? data[i + 1] : '1970-01-01 ' + data[i + 1]
-            });
-          }
-        }
-
-        callback(err, {job: dbi.route, data: args});
-      });
-    }
+      return args;
+    })
   );
 
   addOption(
@@ -193,20 +198,12 @@ var dbi = require('./dbi');
       'three character format.'
     ],
 
-    function(record, callback) {
-      validateRecord(record, this.help[0], function(err, data) {
-        var args;
-
-        if (!err) {
-          args = {
-            $code: data[0].toUpperCase(),
-            $name: data[1]
-          };
-        }
-
-        callback(err, {job: dbi.station, data: args});
-      });
-    }
+    genericSetup(dbi.station, function(data) {
+      return {
+        $code: data[0].toUpperCase(),
+        $name: data[1]
+      };
+    })
   );
 
   addOption(
@@ -219,34 +216,26 @@ var dbi = require('./dbi');
       'FINISH (which may be omitted if this information isn\'t available).'
     ],
     
-    function(record, callback) {
-      validateRecord(record, this.help[0], function(err, data) {
-        var args;
-
-        if (!err) {
-          args = {
-            $origin:    data[0].toUpperCase(),
-            $depart:    data[1],
-            $validFrom: data[2],
-            $validTo:   data.length == 4 ? data[3] : null
-          };
-        }
-
-        callback(err, {job: dbi.origin, data: args});
-      });
-    }
+    genericSetup(dbi.origin, function(data) {
+      return {
+        $origin:    data[0].toUpperCase(),
+        $depart:    data[1],
+        $validFrom: data[2],
+        $validTo:   data.length == 4 ? data[3] : null
+      };
+    })
   );
 
   addOption(
     'json',
     [
-      'FILENAME',
+      'FILENAME+',
       
-      'Import data from a JSON file. See the project wiki on GitHub ' +
+      'Import data from a JSON file(s). See the project wiki on GitHub ' +
       'for the schema: https://github.com/Xophmeister/stupidTrains/wiki'
     ],
     
-    function(record, callback) {
+    function(filenames, callback) {
       // TODO
       callback('Not yet implemented', null);
     }
