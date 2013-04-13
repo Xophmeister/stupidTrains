@@ -32,30 +32,34 @@ async.series([
 
       // Backup routine
       // ...this could probably be done better :P
-      function(callback) {
-        if (results[2] == 'y') {
-          // We know the file exists, because SQLite would have
-          // complained before now. So we copy the database file to
-          // '[timestamp].backup'.
+      (function(makeBackup) {
+        if (makeBackup) {
+          return function(callback) {
+            // We know the file exists, because SQLite would have
+            // complained before now. So we copy the database file to
+            // '[timestamp].backup'.
 
-          var timestamp  = new Date().getTime(),
-              backupName = 'data/' + timestamp + '.backup',
-              
-              source     = fs.createReadStream('data/stupidTrains.sqlite'),
-              backup     = fs.createWriteStream(backupName);
+            var timestamp  = new Date().getTime(),
+                backupName = 'data/' + timestamp + '.backup',
+                
+                source     = fs.createReadStream('data/stupidTrains.sqlite'),
+                backup     = fs.createWriteStream(backupName);
 
-          source.on('error', function() {
-            callback('Cannot perform backup - nuke aborted!', null); 
-          }).on('end', function() {
-            callback(null, 'Database backed up as ' + backupName);
-          });
+            source.on('error', function() {
+              callback('Cannot perform backup - nuke aborted!', null); 
+            }).on('end', function() {
+              callback(null, 'Database backed up as ' + backupName);
+            });
 
-          source.pipe(backup);
+            source.pipe(backup);
+          };
 
         } else {
-          callback(null, 'No backup requested.');
+          return function(callback) {
+            callback(null, 'No backup requested.');
+          };
         }
-      },
+      })(results[2] == 'y'),
 
       dbi.nuke
 
