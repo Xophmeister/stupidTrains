@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Database interface
-var dbi = require('./dbi');
+var dbi = require('./lib/dbi');
 
 // Master Controller
 // Parses command line options and sets up batch

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-var dbi   = require('./dbi'), // DB interface
-    qa    = require('./io'),  // Q&A prompt
+var dbi   = require('./lib/dbi'), // DB interface
+    qa    = require('./lib/io'),  // Q&A prompt
     fs    = require('fs'),
     async = require('async');
 
@@ -36,12 +36,12 @@ async.series([
         if (results[2] == 'y') {
           // We know the file exists, because SQLite would have
           // complained before now. So we copy the database file to
-          // 'stupidTrains.[timestamp].backup'.
+          // '[timestamp].backup'.
 
           var timestamp  = new Date().getTime(),
-              backupName = 'stupidTrains.' + timestamp + '.backup',
+              backupName = 'data/' + timestamp + '.backup',
               
-              source     = fs.createReadStream('stupidTrains.sqlite'),
+              source     = fs.createReadStream('data/stupidTrains.sqlite'),
               backup     = fs.createWriteStream(backupName);
 
           source.on('error', function() {
